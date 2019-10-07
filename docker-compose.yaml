@@ -1,0 +1,64 @@
+version: "3.3"
+
+volumes:
+  db_data: null
+  rabbitmq_data: null
+
+services:
+  db:
+    image: postgres:9.6
+    ports:
+      - 5432:5432
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    env_file:
+      - ./docker/db.env
+  rabbitmq:
+    image: rabbitmq:3.7-management
+    ports:
+      - 15672:15672
+    volumes:
+      - rabbitmq_data:/data
+    env_file:
+      - ./docker/rabbitmq.env
+  app:
+    depends_on:
+      - db
+      - rabbitmq
+    image: mytardis/mytardis:develop
+    build:
+      context: app
+    command: gunicorn wsgi:application --reload --bind=:8000 --workers=1 --worker-class=gevent --timeout=600 --log-level=debug
+    ports:
+      - 8000:8000
+    volumes:
+      - ./app/submodules/mytardis:/app
+      - ./app/submodules/mytardis-app-mydata:/app/tardis/apps/mydata
+      - ./docker/app.settings.py:/app/tardis/settings.py
+      - ./tardis/tests/assets:/var/store
+    env_file:
+      - ./docker/app.env
+  celery:
+    depends_on:
+      - db
+      - rabbitmq
+    image: mytardis/mytardis:develop
+    build:
+      context: app
+    command: celery worker --app=tardis.celery.tardis_app --queues=celery --loglevel=debug --without-mingle --without-gossip
+    volumes:
+      - ./app/submodules/mytardis:/app
+      - ./docker/app.settings.py:/app/tardis/settings.py
+    env_file:
+      - ./docker/app.env
+  verify:
+    depends_on:
+      - rabbitmq
+    build:
+      context: .
+    command: celery worker --app=tardis.celery.app --queues=verify --loglevel=debug --without-mingle --without-gossip
+    environment:
+      - DJANGO_SETTINGS_MODULE=tardis.settings
+    volumes:
+      - ./:/app
+      - ./tardis/tests/assets:/var/store
