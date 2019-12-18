@@ -60,3 +60,6 @@ CELERY_QUEUES += (
         }
     ),
 )
+
+VERIFY_AS_SERVICE = True
+

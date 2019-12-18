@@ -1,36 +1,52 @@
+import unittest
+import uuid
+from os import path
 from time import sleep
 from random import randint
 
-from django.conf import settings
-from django.test import TransactionTestCase
 from kombu import Connection, Exchange, Queue
 
-from tardis.celery import app
+from verify.settings import config
 
 
-class VerifyTaskTestCase(TransactionTestCase):
+class TestVerifyTask(unittest.TestCase):
 
     def setUp(self):
         # Open connection to RabbitMQ
-        self.conn = Connection(settings.BROKER_URL)
+        self.conn = Connection(config['broker_url'])
         self.channel = self.conn.channel()
 
-        # Connect to API queue
-        self.apiQ = Queue(
-            settings.API_QUEUE,
+        # Declare Verify queue
+        q = config['queues']['verify']
+        self.verifyQ = Queue(
+            q['name'],
             channel=self.channel,
-            exchange=Exchange(settings.API_QUEUE),
-            routing_key=settings.API_QUEUE,
-            queue_arguments={
-                'x-max-priority': settings.MAX_TASK_PRIORITY
-            }
+            exchange=Exchange(q['name']),
+            routing_key=q['name'],
+            max_priority=q['max_task_priority']
         )
+        self.verifyQ.declare()
+
+        # Declare API queue
+        q = config['queues']['api']
+        self.apiQ = Queue(
+            q['name'],
+            channel=self.channel,
+            exchange=Exchange(q['name']),
+            routing_key=q['name'],
+            max_priority=q['max_task_priority']
+        )
+        self.apiQ.declare()
 
     def tearDown(self):
+        # Delete Verify queue
+        self.apiQ.delete()
+        # Delete API queue
+        self.verifyQ.delete()
         # Close connection
         self.conn.close()
 
-    def testVerify(self):
+    def test_verify(self):
 
         data = [{
             'filename': '/var/store/15525119098910.pdf',
@@ -45,28 +61,37 @@ class VerifyTaskTestCase(TransactionTestCase):
         }]
 
         for i in data:
-            # Queue cleanup
+            self.assertTrue(path.exists(i['filename']))
+
+            # Queues cleanup
+            self.verifyQ.purge()
             self.apiQ.purge()
 
             # Random DFO ID
             dfo_id = randint(1, 2147483647)
 
             # Send task
-            app.send_task(
-                'mytardis.verify_dfo',
-                args=[
+            q = config['queues']['verify']
+            producer = self.conn.Producer()
+            producer.publish(
+                routing_key=q['name'],
+                body=[[
                     dfo_id,
                     i['filename'],
                     'test',
                     i['algorithm']
-                ]
+                ], {}, {}],
+                headers={
+                    'task': 'verify_dfo',
+                    'id': str(uuid.uuid1())
+                }
             )
 
             # Wait for result message for max 5 seconds
             msg = None
             wait = 0
             while wait <= 5 and msg is None:
-                msg = self.apiQ.get()
+                msg = self.apiQ.get(no_ack=False)
                 if msg is None:
                     sleep(1)
                     wait += 1

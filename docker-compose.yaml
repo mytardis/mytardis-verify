@@ -35,7 +35,7 @@ services:
       - ./app/submodules/mytardis:/app
       - ./app/submodules/mytardis-app-mydata:/app/tardis/apps/mydata
       - ./docker/app.settings.py:/app/tardis/settings.py
-      - ./tardis/tests/assets:/var/store
+      - ./verify/tests/assets:/var/store
     env_file:
       - ./docker/app.env
   celery:
@@ -56,9 +56,8 @@ services:
       - rabbitmq
     build:
       context: .
-    command: celery worker --app=tardis.celery.app --queues=verify --loglevel=debug --without-mingle --without-gossip
     environment:
-      - DJANGO_SETTINGS_MODULE=tardis.settings
+      - LOG_LEVEL=debug
     volumes:
       - ./:/app
-      - ./tardis/tests/assets:/var/store
+      - ./verify/tests/assets:/var/store

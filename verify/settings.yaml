@@ -1,0 +1,15 @@
+rabbitmq:
+  host: rabbitmq
+  port: "5672"
+  user: user
+  password: password
+  vhost: /
+queues:
+  verify:
+    name: verify
+    max_task_priority: 10
+    task_priority: 5
+  api:
+    name: celery
+    max_task_priority: 10
+    task_priority: 5

@@ -2,15 +2,14 @@ import traceback
 import os
 import logging
 
-from django.conf import settings
-
-from tardis.celery import app
-from tardis.utils import checksum
+from verify.settings import config
+from verify.worker import app
+from verify.utils import checksum
 
 logger = logging.getLogger(__name__)
 
 
-@app.task(name='mytardis.verify_dfo')
+@app.task(name='verify_dfo')
 def verify_dfo(dfo_id, filename, ref_id, algorithm='md5'):
     # Accept task
     logger.debug('dfo=%s: verify %s (ref=%s)', dfo_id, filename, ref_id)
@@ -22,6 +21,7 @@ def verify_dfo(dfo_id, filename, ref_id, algorithm='md5'):
         logger.debug('dfo=%s: checksum %s', dfo_id, chksum)
         try:
             # Send checksum back to mothership
+            q = config['queues']['api']
             app.send_task(
                 'tardis_portal.datafileobject.verified',
                 args=[
@@ -29,12 +29,12 @@ def verify_dfo(dfo_id, filename, ref_id, algorithm='md5'):
                     algorithm,
                     chksum
                 ],
-                queue=settings.API_QUEUE,
-                priority=settings.API_TASK_PRIORITY
+                queue=q['name'],
+                priority=q['task_priority']
             )
         except Exception as e:
             logger.error('dfo=%s: an error occurred', dfo_id)
             logger.error(str(e))
             logger.debug(traceback.format_exc())
     else:
-        logger.error('dfo=%s: file does not exist', dfo_id)
+        logger.error('dfo=%s: file does not exist (%s)', dfo_id, filename)
